@@ -1,0 +1,113 @@
+language: c
+
+compiler:
+- gcc
+- clang
+
+os:
+- linux
+- osx
+
+# use new build environment (docker)
+dist: trusty
+sudo: required
+
+env:
+  global:
+    # GITAUTH:
+    - secure: nSunY54Wp5HkQCHHbKwlwpbaKyqRVIu/0EnhaoJSwhM1wqerQV/E5d/2JelO9/tZgbungAO7wk/fjutRMVc7d378RTIPwS8vHpvZfEoGhCFsLoTOlqESzsZFBup2H5t1lpQ23jRHDOxlLdJy2lz5U+zd1YnYgDXqdDFjegsIYdo=
+    # COVERITY_SCAN_TOKEN:
+    - secure: C7LLWmOCdRYJGiXjFYDHWwBB6XGjs9Hio4kkvDehLRredRgp1UJ73g6Av9L7xrTUide6GiPrSd+RJw7py/twx5qaeIjOWPy+XvtmabDEQBquLjEkvS+LP2EycaMe92kHMo1ItFfRomgj1FyNYPVnUFgdyedGWv+p553ziDbrMas=
+  matrix:
+    # Do both, compile with static code analysis and without
+    - ANALYZE=false
+    - ANALYZE=true
+    - DOCKER=true
+
+matrix:
+  exclude:
+  # This excludes OSX GCC builds.
+    - os: osx
+      compiler: gcc
+    - os: osx
+      env: ANALYZE=true
+    - os: osx
+      env: DOCKER=true
+    - os: linux
+      compiler: clang
+      env: DOCKER=true
+
+# Required for docker build test
+services:
+  - docker
+
+addons:
+  apt:
+    sources:
+      # see https://github.com/travis-ci/apt-source-whitelist/blob/master/ubuntu.json
+    packages:
+      - binutils-mingw-w64-i686
+      - build-essential
+      - cmake
+      - gcc-multilib
+      - g++-multilib
+      - valgrind
+      - check
+      - cppcheck
+      - mingw-w64
+      - g++-mingw-w64-x86-64
+      - g++-mingw-w64-i686
+      - libc6-dbg # for valgrind compilation
+      - libsubunit-dev
+      - libx11-dev
+      - wget
+      - xutils-dev
+      - zip
+      - graphviz
+      - texlive-latex-recommended
+      - texlive-latex-extra
+      - texlive-fonts-recommended
+  coverity_scan:
+    project:
+      name: "open62541/open62541"
+      description: "Build submitted by Travis"
+    notification_email: null@plt.rwth-aachen.de
+    build_command_prepend: "mkdir build && cd build && cmake .."
+    build_command: "make"
+    branch_pattern: coverity_scan
+
+cache:
+  pip: true
+  apt: true
+  directories:
+    - $HOME/install
+
+before_install:
+- if [ ${TRAVIS_OS_NAME} == "linux" ] && [ "${COVERITY_SCAN_BRANCH}" = 1 ]; then echo -n | openssl s_client -connect scan.coverity.com:443 | sed -ne '/-BEGIN CERTIFICATE-/,/-END CERTIFICATE-/p' | sudo tee -a /etc/ssl/certs/ca-; fi
+- if [ ${TRAVIS_OS_NAME} == "linux" ]; then sh ./tools/travis/travis_linux_before_install.sh; fi
+- if [ ${TRAVIS_OS_NAME} == "osx" ]; then sh ./tools/travis/travis_osx_before_install.sh; fi
+
+script:
+- if [ ${TRAVIS_OS_NAME} == "linux" ] && [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then sh ./tools/travis/travis_linux_script.sh; fi
+- if [ ${TRAVIS_OS_NAME} == "osx" ] && [ "${COVERITY_SCAN_BRANCH}" != 1 ]; then sh ./tools/travis/travis_osx_script.sh; fi
+
+after_success:
+- if [ ${TRAVIS_OS_NAME} == "linux" ]; then sh ./tools/travis/travis_linux_after_success.sh; fi
+
+deploy:
+  provider: releases
+  api_key:
+    secure: PKCoA7MBRtHloIbNF4Qj5LQyCafjekfVeFXlMBd9KmC0ynNuef+D7nn38f/jo25/b0Ii7r+hgslkQPezbKyEqo2zcCB8Pn8TWau2hbzKM/dUCPoN90HVaQcRjUi8P2Y+QkouwyPWSujBL35/X5QiAntRotCSbZx4fkyiN8cU95o=
+  file:
+    - open62541-win32.zip
+    - open62541-win64.zip
+    - open62541-linux32.tar.gz
+    - open62541-linux64.tar.gz
+    - open62541-raspberrypi.tar.gz
+    - open62541.c
+    - open62541.h
+  skip_cleanup: true
+  on:
+    repo: open62541/open62541
+    tags: true
+    condition: $CC = gcc && $ANALYZE = false

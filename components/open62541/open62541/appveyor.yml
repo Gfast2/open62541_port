@@ -1,0 +1,86 @@
+version: '{build}'
+
+clone_folder: c:\projects\open62541
+clone_depth: 20
+
+environment:
+    global:
+        CYG_ARCH: x86
+        CYG_ROOT: C:/cygwin
+        CYG_SETUP_URL: http://cygwin.com/setup-x86.exe
+        CYG_MIRROR: http://cygwin.mirror.constant.com
+        CYG_CACHE: C:\cygwin\var\cache\setup
+        CYG_BASH: C:/cygwin/bin/bash
+
+      
+    matrix:
+        - CC_NAME: MinGW Makefiles
+          CC_SHORTNAME: mingw
+          MAKE: mingw32-make
+          FORCE_CXX: OFF
+        # - CC_NAME: Visual Studio 9 2008
+        #   CC_SHORTNAME: vs2008
+        # # Do not use multicore switch (/m), it causes appveyor to randomly fail
+        #   MAKE: msbuild open62541.sln
+        #   FORCE_CXX: ON
+        - CC_NAME: Visual Studio 12 2013
+          CC_SHORTNAME: vs2013
+          # Do not use multicore switch (/m), it causes appveyor to randomly fail
+          MAKE: msbuild open62541.sln
+          FORCE_CXX: OFF
+        - CC_NAME: Visual Studio 12 2013 Win64
+          CC_SHORTNAME: vs2013-x64
+          # Do not use multicore switch (/m), it causes appveyor to randomly fail
+          MAKE: msbuild open62541.sln
+          FORCE_CXX: OFF
+
+cache:
+  - '%CYG_CACHE%'
+
+init:
+  - git config --global core.autocrlf input # Attempt to ensure we don't try to convert line endings to Win32 CRLF as this will cause build to fail
+
+# Install needed build dependencies
+install:
+  - if not exist "%CYG_ROOT%" mkdir "%CYG_ROOT%"
+  - ps: echo "Installing Cygwin from $env:CYG_SETUP_URL to $env:CYG_ROOT/setup-x86.exe"
+  - appveyor DownloadFile %CYG_SETUP_URL% -FileName %CYG_ROOT%/setup-x86.exe
+  - ps: echo "Downloaded. Now ready to install."
+  - cmd: '"%CYG_ROOT%/setup-x86.exe" --quiet-mode --no-shortcuts --only-site -R "%CYG_ROOT%" -s "%CYG_MIRROR%" -l "%CYG_CACHE%" --packages cmake,python'
+  - cmd: '%CYG_BASH% -lc "cygcheck -dc cygwin"'
+
+before_build:
+  # Workaround for CMake not wanting sh.exe on PATH for MinGW
+  - set PATH=%PATH:C:\Program Files\Git\usr\bin;=%
+  - set PATH=C:\MinGW\bin;%PATH%
+
+build_script:
+  - cd c:\projects\open62541
+  - md build
+  - cd build
+  - echo "Testing %CC_NAME%"
+  - cmake -DUA_BUILD_EXAMPLES:BOOL=ON -DUA_COMPILE_AS_CXX:BOOL=%FORCE_CXX% -G"%CC_NAME%" ..
+  - '%MAKE%'
+  - cd ..
+  - rd /s /q build
+  - md build
+  - cd build
+  - echo "Testing %CC_NAME% with amalgamation"
+  - cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUA_BUILD_EXAMPLES:BOOL=ON -DUA_ENABLE_AMALGAMATION:BOOL=ON -DUA_COMPILE_AS_CXX:BOOL=%FORCE_CXX% -DBUILD_SHARED_LIBS:BOOL=OFF -G"%CC_NAME%" ..
+  - '%MAKE%'
+  - 7z a -tzip open62541-%CC_SHORTNAME%-static.zip %APPVEYOR_BUILD_FOLDER%\build\*
+  - move open62541-%CC_SHORTNAME%-static.zip %APPVEYOR_BUILD_FOLDER%
+  - cd ..
+  - rd /s /q build
+  - md build
+  - cd build
+  - echo "Testing %CC_NAME% with amalgamation and .dll"
+  - cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -DUA_BUILD_EXAMPLES:BOOL=ON -DUA_ENABLE_AMALGAMATION:BOOL=ON -DUA_COMPILE_AS_CXX:BOOL=%FORCE_CXX% -DBUILD_SHARED_LIBS:BOOL=ON -G"%CC_NAME%" ..
+  - '%MAKE%'
+  - 7z a -tzip open62541-%CC_SHORTNAME%-dynamic.zip %APPVEYOR_BUILD_FOLDER%\build\*
+  - move open62541-%CC_SHORTNAME%-dynamic.zip %APPVEYOR_BUILD_FOLDER%
+  - cd ..
+
+after_build:
+  - appveyor PushArtifact %APPVEYOR_BUILD_FOLDER%\open62541-%CC_SHORTNAME%-static.zip
+  - appveyor PushArtifact %APPVEYOR_BUILD_FOLDER%\open62541-%CC_SHORTNAME%-dynamic.zip
